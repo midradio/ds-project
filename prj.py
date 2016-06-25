@@ -1,4 +1,5 @@
 import sys
+sys.setrecursionlimit(150000)
 
 class User:
     def __init__(self):
@@ -17,14 +18,12 @@ class User:
         self.name = name
 
     def add_friend(self, usr):
-        idn = usr.idn
-        self.friend.append(idn)
+        self.friend.append(usr)
         usr.add_follower(self)
         self.num_friend = self.num_friend + 1
 
     def add_follower(self, usr):
-        idn = usr.idn
-        self.followers.append(idn)
+        self.followers.append(usr)
 
     def add_tweet(self, word):
         self.tweets.append(word)
@@ -45,6 +44,10 @@ class UserNode:
 class UserTree:
     def __init__(self):
         self.root = None
+        self.max_friends = -1
+        self.min_friends = 1E6
+        self.max_tweets = -1
+        self.min_tweets = 1E6
 
     def insert_node(self, node):
         y = None
@@ -72,6 +75,34 @@ class UserTree:
         else:
             return self.search_tree(x.right, key)
 
+    def user_traverse(self, node):
+        if node.left != None:
+            self.user_traverse(node.left)
+        friends = node.user.num_friend
+        tweets = node.user.num_tweets
+        if friends > self.max_friends:
+            self.max_friends = friends
+        if friends < self.min_friends:
+            self.min_friends = friends
+        if tweets > self.max_tweets:
+            self.max_tweets = tweets
+        if tweets < self.min_tweets:
+            self.min_tweets = tweets
+        if node.right != None:
+            self.user_traverse(node.right)
+
+    def statistics(self, users, friends, tweets):
+        avg_friends = round(friends / users)
+        avg_tweets = round(tweets / users)
+        self.user_traverse(self.root)
+        print("Average number of friends: " + str(avg_friends))
+        print("Minimum friends: " + str(self.min_friends))
+        print("Maximum number of friends: " + str(self.max_friends))
+        print("")
+        print("Average tweets per user: " + str(avg_tweets))
+        print("Minimum tweets per user: " + str(self.min_tweets))
+        print("Maximum tweets per user: " + str(self.max_tweets))
+
 class Word:
     def __init__(self):
         self.string = ""
@@ -91,10 +122,10 @@ class WordNode:
         self.prev = None
         self.next = None
 
-    def update_word(self, word, idn):
+    def update_word(self, word, usr):
         self.word = word
         self.count = self.count + 1
-        self.user_list.append(idn)        
+        self.user_list.append(usr)
 
 class WordHash:
     def __init__(self, init_num):
@@ -104,31 +135,31 @@ class WordHash:
             a = WordNode()
             self.hashtable.append(a)
 
-    def hash(self, str):
+    def hash(self, string):
         m = 0
-        for c in str:
+        for c in string:
             m = m + ord(c)
         return m % (self.hash_size)
 
-    def add_word(self, word, idn):
+    def add_word(self, word, usr):
         hash_num = self.hash(word)
         wn = self.hashtable[hash_num]
         if wn.word == word:
-            wn.update_word(word, idn)
+            wn.update_word(word, usr)
         else:
             if wn.word == "":
-                wn.update_word(word, idn)
+                wn.update_word(word, usr)
             else:
                 nn = wn.next
                 found = False
                 while nn is not None:
                     if nn.word == word:
-                        nn.update_word(word, idn)
+                        nn.update_word(word, usr)
                         found = True
                     nn = nn.next
                 if found is False:
                     a = WordNode()
-                    a.update_word(word, idn)
+                    a.update_word(word, usr)
                     a.prev = None
                     a.next  = wn
                     wn.prev = a
@@ -183,7 +214,7 @@ class WordTweetSystem:
                 if select == 0:
                     self.read_data()
                 elif select == 1:
-                    self.stastistics()
+                    self.statistics()
                 elif select == 99:
                     sys.exit()
                 else:
@@ -274,6 +305,10 @@ class WordTweetSystem:
          word_txt.close()
          print("Total tweets: " + str(self.total_tweets))
          print("")
-        
+
+    def statistics(self):
+        self.usertree.statistics(self.total_users, self.total_friends, self.total_tweets)
+        print("")
+
 wt = WordTweetSystem()
 wt.main()
