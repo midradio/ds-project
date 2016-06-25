@@ -68,12 +68,13 @@ class UserTree:
 
     def search_tree(self, node, key):
         x = node
-        if x == None or key == x.key:
-            return x
-        if key < x.key:
-            return self.search_tree(x.left, key)
-        else:
-            return self.search_tree(x.right, key)
+        while True:
+            if x == None or key == x.key:
+                return x
+            if key < x.key:
+                x = x.left
+            else:
+                x = x.right
 
     def user_traverse(self, node):
         if node.left != None:
@@ -103,16 +104,62 @@ class UserTree:
         print("Minimum tweets per user: " + str(self.min_tweets))
         print("Maximum tweets per user: " + str(self.max_tweets))
 
+    def make_userlist(self, empty_list, node):
+        if node.left != None:
+            self.make_userlist(empty_list, node.left)
+        empty_list.append(node)
+        if node.right != None:
+            self.make_userlist(empty_list, node.right)
+
+    def user_merge(self, tmp, A, p, q, r):
+        for i in range(p, r):
+            tmp[i] = A[i]
+        i = p
+        j = q
+        while i < q and j < r:
+            if tmp[i].user.num_tweets > tmp[j].user.num_tweets:
+                A[p] = tmp[i]
+                i = i + 1
+            else :
+                A[p] = tmp[j]
+                j = j + 1
+            p = p + 1
+        while i < q:
+            A[p] = tmp[i]
+            i = i + 1
+            p = p + 1
+        while j < r:
+            A[p] = tmp[j]
+            j = j + 1
+            p = p + 1
+
+    def user_mergesort(self, tmp, A, p, r):
+        if p < r - 1:
+            q = (p + r) // 2
+            self.user_mergesort(tmp, A, p, q)
+            self.user_mergesort(tmp, A, q, r)
+            self.user_merge(tmp, A, p, q, r)
+
+    def user_top5(self):
+        userlist = []
+        self.make_userlist(userlist, self.root)
+        tmp = userlist[:]
+        self.user_mergesort(tmp, userlist, 0, len(userlist))
+        for i in range(5):
+            print(str(i + 1) + ". " + userlist[i].user.name + "\tid: " + str(userlist[i].user.idn) + "\ttweets: " + str(userlist[i].user.num_tweets))
+
 class Word:
     def __init__(self):
         self.string = ""
         self.tweet_date = ""
         self.user_idn = 0
+        self.user_name = ""
 
-    def set_word(self, string, date, idn):
+    def set_word(self, string, date, idn, name):
         self.string = string
         self.tweet_date = date
         self.user_idn = idn
+        self.user_name = name
 
 class WordNode:
     def __init__(self):
@@ -122,10 +169,10 @@ class WordNode:
         self.prev = None
         self.next = None
 
-    def update_word(self, word, usr):
+    def update_word(self, word, usr_wd):
         self.word = word
         self.count = self.count + 1
-        self.user_list.append(usr)
+        self.user_list.append(usr_wd)
 
 class WordHash:
     def __init__(self, init_num):
@@ -141,25 +188,25 @@ class WordHash:
             m = m + ord(c)
         return m % (self.hash_size)
 
-    def add_word(self, word, usr):
+    def add_word(self, word, usr_wd):
         hash_num = self.hash(word)
         wn = self.hashtable[hash_num]
         if wn.word == word:
-            wn.update_word(word, usr)
+            wn.update_word(word, usr_wd)
         else:
             if wn.word == "":
-                wn.update_word(word, usr)
+                wn.update_word(word, usr_wd)
             else:
                 nn = wn.next
                 found = False
                 while nn is not None:
                     if nn.word == word:
-                        nn.update_word(word, usr)
+                        nn.update_word(word, usr_wd)
                         found = True
                     nn = nn.next
                 if found is False:
                     a = WordNode()
-                    a.update_word(word, usr)
+                    a.update_word(word, usr_wd)
                     a.prev = None
                     a.next  = wn
                     wn.prev = a
@@ -176,7 +223,54 @@ class WordHash:
                 if nn.word == word:
                     return nn
                 nn = nn.next
-            return None    
+            return None
+
+    def make_wordlist(self):
+        wordlist = []
+        for i in range(self.hash_size):
+            wn = self.hashtable[i]
+            wordlist.append(wn)
+            nn = wn.next
+            while nn is not None:
+                wordlist.append(nn)
+                nn = nn.next
+        return wordlist
+
+    def word_merge(self, tmp, A, p, q, r):
+        for i in range(p, r):
+            tmp[i] = A[i]
+        i = p
+        j = q
+        while i < q and j < r:
+            if tmp[i].count > tmp[j].count:
+                A[p] = tmp[i]
+                i = i + 1
+            else:
+                A[p] = tmp[j]
+                j = j + 1
+            p = p + 1
+        while i < q:
+            A[p] = tmp[i]
+            i = i + 1
+            p = p + 1
+        while j < r:
+            A[p] = tmp[j]
+            j = j + 1
+            p = p + 1
+
+    def word_mergesort(self, tmp, A, p, r):
+        if p < r - 1:
+            q = (p + r) // 2
+            self.word_mergesort(tmp, A, p, q)
+            self.word_mergesort(tmp, A, q, r)
+            self.word_merge(tmp, A, p, q, r)
+
+    def word_top5(self):
+        wordlist = self.make_wordlist()
+        tmp = wordlist[:]
+        self.word_mergesort(tmp, wordlist, 0, len(wordlist))
+        for i in range(5):
+            print(str(i+1)+". " + wordlist[i].word + "\tcount: " + str(wordlist[i].count))
        
 class WordTweetSystem:
     def __init__(self):
@@ -194,6 +288,8 @@ class WordTweetSystem:
 
         self.usertree = UserTree()
         self.wordhash = WordHash(1000)
+
+        self.mentioned_word = None
 
     def main(self):
             while True:
@@ -215,6 +311,12 @@ class WordTweetSystem:
                     self.read_data()
                 elif select == 1:
                     self.statistics()
+                elif select == 2:
+                    self.word_top5()
+                elif select == 3:
+                    self.user_top5()
+                elif select == 4:
+                    self.find_user()
                 elif select == 99:
                     sys.exit()
                 else:
@@ -297,9 +399,9 @@ class WordTweetSystem:
                  word_lines_num = word_lines_num + 1
              elif word_lines_num == 3:
                  wd = Word()
-                 wd.set_word(word_data_list[1], word_data_list[0], now_user)
+                 wd.set_word(word_data_list[1], word_data_list[0], now_user, up.user.name)
                  up.user.add_tweet(wd)
-                 self.wordhash.add_word(word_data_list[1], now_user)
+                 self.wordhash.add_word(word_data_list[1], wd)
                  self.total_tweets = self.total_tweets + 1
                  word_lines_num = 0
          word_txt.close()
@@ -308,6 +410,24 @@ class WordTweetSystem:
 
     def statistics(self):
         self.usertree.statistics(self.total_users, self.total_friends, self.total_tweets)
+        print("")
+
+    def word_top5(self):
+        self.wordhash.word_top5()
+        print("")
+
+    def user_top5(self):
+        self.usertree.user_top5()
+        print("")
+
+    def find_user(self):
+        print("Which word?")
+        word = input()
+        self.mentioned_word = self.wordhash.search_word(word)
+        print("")
+        mentioned_user = self.mentioned_word.user_list
+        for u in mentioned_user:
+            print("User: " + u.user_name + "(" + str(u.user_idn) + ") mentioned at " + u.tweet_date)
         print("")
 
 wt = WordTweetSystem()
