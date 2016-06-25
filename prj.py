@@ -1,5 +1,9 @@
 import sys
+import copy
 sys.setrecursionlimit(150000)
+WHITE = 0
+GRAY = 1
+BLACK = 2
 
 class User:
     def __init__(self):
@@ -22,12 +26,35 @@ class User:
         usr.add_follower(self)
         self.num_friend = self.num_friend + 1
 
+    def delete_friend(self, follower):
+        friend = self.friend
+        for i in range(len(friend)):
+            if friend[i].name == follower.name:
+                del friend[i]
+                break
+        self.num_friend -= 1
+
     def add_follower(self, usr):
         self.followers.append(usr)
+
+    def delete_follower(self, friend):
+        followers = self.followers
+        for i in range(len(followers)):
+            if followers[i].name == friend.name:
+                del followers[i]
+                break
 
     def add_tweet(self, word):
         self.tweets.append(word)
         self.num_tweets = self.num_tweets + 1
+
+    def delete_tweet(self, word):
+        tweets = self.tweets
+        for i in range(len(tweets)):
+            if tweets[i].string == word.string:
+                del tweets[i]
+                break
+        self.num_tweets -= 1
 
 class UserNode:
     def __init__(self):
@@ -36,10 +63,46 @@ class UserNode:
         self.left = None
         self.right = None
         self.parent = None
+        self.n = 0
 
     def set_user(self, user):
         self.user = user
         self.key = self.user.idn
+
+class UserAdj:
+    def __init__(self):
+        self.n = 0
+        self.next = None
+
+class UserVertex:
+    def __init__(self):
+        self.color = WHITE
+        self.parent = -1
+        self.key = 0
+        self.name = ""
+        self.n = 0
+        self.first = None
+        self.d = 0
+        self.f = 0
+        self.weight = 0
+
+    def add(self, v):
+        a = UserAdj()
+        a.n = v.n
+        a.next = self.first
+        self.first = a
+
+    def copy(self, other):
+        self.color = other.color
+        self.parent = other.parent
+        self.key = other.key
+        self.name = other.name
+        self.n = other.n
+        self.first = other.first
+        self.d = other.d
+        self.f = other.f
+        self.weight = other.weight
+
 
 class UserTree:
     def __init__(self):
@@ -48,6 +111,7 @@ class UserTree:
         self.min_friends = 1E6
         self.max_tweets = -1
         self.min_tweets = 1E6
+        self.i = 0
 
     def insert_node(self, node):
         y = None
@@ -91,6 +155,64 @@ class UserTree:
             self.min_tweets = tweets
         if node.right != None:
             self.user_traverse(node.right)
+
+    def reset_i(self):
+        self.i = 0
+
+    def vertex_traverse(self, node):
+        if node.left != None:
+            self.vertex_traverse(node.left)
+        node.n = self.i
+        self.i += 1
+        if node.right != None:
+            self.vertex_traverse(node.right)
+
+    def make_uservertex(self, node, vlist):
+        if node.left != None:
+            self.make_uservertex(node.left, vlist)
+        n = node.n
+        vlist[n].key = node.key
+        vlist[n].name = node.user.name
+        vlist[n].n = n
+        friends = node.user.friend
+        for f in friends:
+            sf = self.search_tree(self.root, f.idn)
+            fn = sf.n
+            vlist[n].add(vlist[fn])
+        followers = node.user.followers
+        vlist[n].weight = len(followers)
+        if node.right != None:
+            self.make_uservertex(node.right, vlist)
+
+    def tree_minimum(self, node):
+        while node.left is not None:
+            node = node.left
+        return node
+
+    def transplant(self, u, v):
+        if u.parent == None:
+            self.root = v
+        elif u == u.parent.left:
+            u.parent.left = v
+        else:
+            u.parent.right = v
+        if v is not None:
+            v.parent = u.parent
+
+    def delete_node(self, node):
+        if node.left is None:
+            self.transplant(node, node.right)
+        elif node.right is None:
+            self.transplant(node, node.left)
+        else:
+            y = self.tree_minimum(node.right)
+            if y.parent != node:
+                self.transplant(y, y.right)
+                y.right = node.right
+                y.right.parent = y
+            self.transplant(node, y)
+            y.left = node.left
+            y.left.parent = y
 
     def statistics(self, users, friends, tweets):
         avg_friends = round(friends / users)
@@ -152,20 +274,19 @@ class Word:
     def __init__(self):
         self.string = ""
         self.tweet_date = ""
-        self.user_idn = 0
-        self.user_name = ""
+        self.user = None
 
-    def set_word(self, string, date, idn, name):
+    def set_word(self, string, date, usr):
         self.string = string
         self.tweet_date = date
-        self.user_idn = idn
-        self.user_name = name
+        self.user = usr
 
 class WordNode:
     def __init__(self):
         self.word = ""
         self.count = 0
         self.user_list = []
+        self.user_set = []
         self.prev = None
         self.next = None
 
@@ -215,6 +336,9 @@ class WordHash:
     def search_word(self, word):
         hash_num = self.hash(word)
         wn = self.hashtable[hash_num]
+        if wn is None:
+            print("Error: There is no such word!")
+            sys.exit(-1)
         if wn.word == word:
             return wn
         else:
@@ -225,15 +349,32 @@ class WordHash:
                 nn = nn.next
             return None
 
+    def delete_word(self, word):
+        hn = self.hash(word)
+        wn = self.search_word(word)
+        if wn is None:
+            print("Error: There is no such word!")
+            sys.exit(-1)
+        else:
+            if wn.prev is not None:
+                wn.prev.next = wn.next
+            else:
+                self.hashtable[hn] = wn.next
+            if wn.next is not None:
+                wn.next.prev = wn.prev
+            elif wn.prev is None and wn.next is None:
+                self.hashtable[hn] = WordNode()
+
     def make_wordlist(self):
         wordlist = []
         for i in range(self.hash_size):
             wn = self.hashtable[i]
-            wordlist.append(wn)
-            nn = wn.next
-            while nn is not None:
-                wordlist.append(nn)
-                nn = nn.next
+            if wn.word != "":
+                wordlist.append(wn)
+                nn = wn.next
+                while nn is not None:
+                    wordlist.append(nn)
+                    nn = nn.next
         return wordlist
 
     def word_merge(self, tmp, A, p, q, r):
@@ -271,7 +412,147 @@ class WordHash:
         self.word_mergesort(tmp, wordlist, 0, len(wordlist))
         for i in range(5):
             print(str(i+1)+". " + wordlist[i].word + "\tcount: " + str(wordlist[i].count))
-       
+
+class DFS:
+    def __init__(self):
+        self.time = 0
+        self.vertices = None
+        self.scc_list = []
+        self.scc_sorted_indices = None
+
+    def set_vertices(self, vertices):
+        self.vertices = vertices
+
+    def dfs(self):
+        for u in self.vertices:
+            u.color = WHITE
+            u.parent = -1
+        self.time = 0
+        for u in self.vertices:
+            if u.color == WHITE:
+                self.dfs_visit(u)
+
+    def dfs_visit(self, u):
+        self.time = self.time + 1
+        u.d = self.time
+        u.color = GRAY
+        v = u.first
+        while v:
+            if self.vertices[v.n].color == WHITE:
+                self.vertices[v.n].parent = u.n
+                self.dfs_visit(self.vertices[v.n])
+            v = v.next
+        u.color = BLACK
+        self.time = self.time + 1
+        u.f = self.time
+
+    def transpose(self):
+        vertices1 = []
+        for v in self.vertices:
+            v1 = UserVertex()
+            v1.copy(v)
+            vertices1.append(v1)
+        self.g_transpose(self.vertices, vertices1)
+        self.set_vertices(vertices1)
+
+    def g_transpose(self, vertices, vertices1):
+        for i in range(len(vertices1)):
+            vertices1[i].first = None
+        for v in vertices:
+            p = v.first
+            while p:
+                vertices1[p.n].add(v)
+                p = p.next
+
+    def scc(self):
+        self.dfs()
+        self.transpose()
+        sorted = self.sort_by_f()
+        vset = self.vertices
+        for v in vset:
+            v.color = WHITE
+            v.parent = -1
+        for n in sorted:
+            if self.vertices[n].color == WHITE:
+                self.scc_find(vset[n])
+
+    def sort_by_f(self):
+        vset = self.vertices
+        sorted_indices = list(range(len(vset)))
+        self.heapsort(sorted_indices)
+        return sorted_indices
+
+    def left(self, n):
+        return 2 * n + 1
+
+    def right(self, n):
+        return 2 * n + 2
+
+    def heapify(self, A, i, heapsize):
+        vset = self.vertices
+        l = self.left(i)
+        r = self.right(i)
+        if l < heapsize and vset[A[l]].f < vset[A[i]].f:
+            largest = l
+        else:
+            largest = i
+        if r < heapsize and vset[A[r]].f < vset[A[largest]].f:
+            largest = r
+        if largest != i:
+            A[i], A[largest] = A[largest], A[i]
+            self.heapify(A, largest, heapsize)
+
+    def buildheap(self, A):
+        for i in range(len(A) // 2 + 1, 0, -1):
+            self.heapify(A, i - 1, len(A))
+
+    def heapsort(self, A):
+        self.buildheap(A)
+        for i in range(len(A), 1, -1):
+            A[i - 1], A[0] = A[0], A[i - 1]
+            self.heapify(A, 0, i - 1)
+
+    def scc_find(self, u):
+        u.color = GRAY
+        v = u.first
+        found = False
+        while v:
+            if self.vertices[v.n].color == WHITE:
+                found = True
+                self.vertices[v.n].parent = u.n
+                self.scc_find(self.vertices[v.n])
+            v = v.next
+        if not found:
+            print("SCC:", end=" ")
+            self.scc_print(u)
+            print("")
+        u.color = BLACK
+
+    def scc_sort(self):
+        vset = self.vertices
+        print(len(self.scc_list))
+        for node in self.scc_list:
+            idx = 1
+            p = node.parent
+            while p >= 0:
+                idx = idx + 1
+                p = vset[p].parent
+            node.f = idx
+            print(idx)
+        self.scc_sorted_indices = list(range(len(self.scc_list)))
+        for i in range(5):
+            print(str(i+1) + ".")
+            print("\t", end='')
+            idx = self.scc_sorted_indices[i]
+            self.scc_print(self.scc_list[idx])
+            print("")
+
+    def scc_print(self, u):
+        vset = self.vertices
+        print(u.name + "(" + str(u.key) + ")", end=" ")
+        if u.parent >= 0:
+            self.scc_print(vset[u.parent])
+
 class WordTweetSystem:
     def __init__(self):
         self.total_users = 0
@@ -317,6 +598,14 @@ class WordTweetSystem:
                     self.user_top5()
                 elif select == 4:
                     self.find_user()
+                elif select == 5:
+                    self.find_friend()
+                elif select == 6:
+                    self.delete_mention()
+                elif select == 7:
+                    self.delete_user()
+                elif select == 8:
+                    self.scc_top5()
                 elif select == 99:
                     sys.exit()
                 else:
@@ -399,7 +688,7 @@ class WordTweetSystem:
                  word_lines_num = word_lines_num + 1
              elif word_lines_num == 3:
                  wd = Word()
-                 wd.set_word(word_data_list[1], word_data_list[0], now_user, up.user.name)
+                 wd.set_word(word_data_list[1], word_data_list[0], up.user)
                  up.user.add_tweet(wd)
                  self.wordhash.add_word(word_data_list[1], wd)
                  self.total_tweets = self.total_tweets + 1
@@ -426,9 +715,89 @@ class WordTweetSystem:
         self.mentioned_word = self.wordhash.search_word(word)
         print("")
         mentioned_user = self.mentioned_word.user_list
+        mentioned_set = self.mentioned_word.user_set
         for u in mentioned_user:
-            print("User: " + u.user_name + "(" + str(u.user_idn) + ") mentioned at " + u.tweet_date)
+            if mentioned_set == []:
+                mentioned_set.append(u)
+            else:
+                found = False
+                for s in mentioned_set:
+                    if s.user.name == u.user.name:
+                        found = True
+                if found == False:
+                    mentioned_set.append(u)
+            print("User: " + u.user.name + "(" + str(u.user.idn) + ") mentioned at " + u.tweet_date)
         print("")
+
+    def find_friend(self):
+        user_set = self.mentioned_word.user_set
+        for u in user_set:
+            friends = u.user.friend
+            print("mentioned user: " + u.user.name + "(" + str(u.user.idn) + ")")
+            print("\tfriends: ")
+            for f in friends:
+                print("\t-> " + f.name + "(" + str(f.idn) + ")")
+            print("")
+        print("")
+
+    def delete_mention(self):
+        mentioned_word = self.mentioned_word
+        mentioned_user = self.mentioned_word.user_list
+        self.wordhash.delete_word(mentioned_word.word)
+        for u in mentioned_user:
+            u.user.delete_tweet(u)
+            self.total_tweets -= 1
+            print("deleted mention of user: " + u.user.name + "(" + str(u.user.idn) + ")")
+        mentioned_word = None
+        print("*mentioned word deleted*")
+        print("")
+
+    def delete_user(self):
+        mentioned_word = copy.deepcopy(self.mentioned_word)
+        mentioned_user = copy.deepcopy(self.mentioned_word.user_set)
+        for u in mentioned_user:
+            followers = u.user.followers
+            for f in followers:
+                f.delete_friend(u.user)
+            friends = u.user.friend
+            for f in friends:
+                f.delete_follower(u.user)
+            self.total_friends -= 1
+            mentions = u.user.tweets
+            for m in mentions:
+                word = m.string
+                wn = self.wordhash.search_word(word)
+                wn.count -= 1
+                self.total_tweets -= 1
+                if wn.count <= 0:
+                    self.wordhash.delete_word(word)
+
+        for u in mentioned_user:
+            idn = u.user.idn
+            un = self.usertree.search_tree(self.usertree.root, idn)
+            if un is not None:
+                print("User: " + un.user.name + "(" + str(un.user.idn) + ") deleted")
+                self.usertree.delete_node(un)
+                self.total_users -= 1
+        print("*mentioned users deleted*")
+        print("")
+
+    def scc_top5(self):
+        vlist = []
+        ut = self.usertree
+        ut.reset_i()
+        ut.vertex_traverse(ut.root)
+        for j in range(ut.i):
+            uv = UserVertex()
+            vlist.append(uv)
+        ut.make_uservertex(ut.root, vlist)
+        print(vlist[0].first.n)
+        User_DFS = DFS()
+        User_DFS.set_vertices(vlist)
+        User_DFS.scc()
+        #User_DFS.scc_sort()
+        print("")
+
 
 wt = WordTweetSystem()
 wt.main()
